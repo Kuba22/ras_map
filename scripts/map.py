@@ -19,6 +19,7 @@ class Map:
 
         self.map = cv2.imread(self.map_file, 0)
         self.cell_size = 0.01
+        self.b = int(0.5 / self.cell_size)
         if self.map is None:
             maze_file = open(self.maze_file)
             lines = np.array([map(float, line.split(' ')) for line in maze_file])
@@ -42,16 +43,22 @@ class Map:
         p = (pxy / self.cell_size).astype(int)
         print p
         print self.pose2d
+        pose_cell = (int(self.pose2d[0]/self.cell_size), int(self.pose2d[1]/self.cell_size))
         im = cv2.imread(self.map_file, 0).astype(int)
         cv2.line(im,
-                 (int(self.pose2d[0]/self.cell_size)+5, int(self.pose2d[1]/self.cell_size)-5),
-                 (int(self.pose2d[0]/self.cell_size)-5, int(self.pose2d[1]/self.cell_size)+5), 255, 1)
+                 (pose_cell[0]+5, pose_cell[1]-5),
+                 (pose_cell[0]-5, pose_cell[1]+5), 255, 1)
         cv2.line(im,
-                 (int(self.pose2d[0] / self.cell_size) + 5, int(self.pose2d[1] / self.cell_size) + 5),
-                 (int(self.pose2d[0] / self.cell_size) - 5, int(self.pose2d[1] / self.cell_size) - 5), 255, 1)
+                 (pose_cell[0] + 5, pose_cell[1] + 5),
+                 (pose_cell[0] - 5, pose_cell[1] - 5), 255, 1)
         im[(p[1], p[0])] += 10
+        (h, w) = self.map.shape
+        im[((pose_cell[1] - self.b) if (pose_cell[1] - self.b >= 0) else 0):
+((pose_cell[1] + self.b + 1) if (pose_cell[1] + self.b < w) else w),
+((pose_cell[0] - self.b) if (pose_cell[0] - self.b >= 0) else 0):
+((pose_cell[0] + self.b + 1) if (pose_cell[0] + self.b < h) else h)] -= 1
         im[im > 255] = 255
-        im[im < 0] = 0  # check if this does what i want it to do
+        im[im < 0] = 0
         self.map = im.astype(np.uint8)
         cv2.imwrite(self.map_file, self.map)
 
@@ -72,6 +79,12 @@ A[(B[0], B[1])]+=1
 A[A > 8] = 8
 
 pi = 3.14159
+
+p = (2,2)
+b = 3
+a = np.ones((10, 10))
+a[((p[1]-b) if (p[1]-b>=0) else 0): ((p[1]+b+1) if (p[1]+b<10) else 10),
+   ((p[0]-b) if (p[0]-b>=0) else 0): ((p[0]+b+1) if (p[0]+b<10) else 10)] -= 10
 
 if __name__ == '__main__':
     m = Map()
