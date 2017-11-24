@@ -12,6 +12,7 @@ class Map:
         rospy.init_node("map")
         self.pose = None
         self.scan = None
+        self.pose2d = None
         self.scan_sub = rospy.Subscriber("/scan", LaserScan, self.scanCallback)
         self.pose_sub = rospy.Subscriber("/localization/pose", PoseStamped, self.poseCallback)
 
@@ -42,19 +43,20 @@ class Map:
         cv2.waitKey(1)
 
     def update(self):
-        if self.scan is None:
+        if self.scan is None or self.pose2d is None:
             return
         pxy = np.array([self.scan[0] * np.cos(self.scan[1] + self.pose2d[2]),
                         self.scan[0] * np.sin(self.scan[1] + self.pose2d[2])]) + self.pose2d[:2, np.newaxis]
         p = (pxy / self.cell_size).astype(int)
         pose_cell = (int(self.pose2d[0]/self.cell_size), int(self.pose2d[1]/self.cell_size))
-        im = cv2.imread(self.map_file, 0).astype(int)
+        im = cv2.imread(self.map_file, 0)
         cv2.line(im,
-                 (pose_cell[0]+5, pose_cell[1]-5),
-                 (pose_cell[0]-5, pose_cell[1]+5), 255, 1)
+                 (pose_cell[0] + 5, pose_cell[1] - 5),
+                 (pose_cell[0] - 5, pose_cell[1] + 5), 255, 1)
         cv2.line(im,
                  (pose_cell[0] + 5, pose_cell[1] + 5),
                  (pose_cell[0] - 5, pose_cell[1] - 5), 255, 1)
+        im = im.astype(int)
         im[(p[1], p[0])] += 10
         (h, w) = self.map.shape
         im[((pose_cell[1] - self.b) if (pose_cell[1] - self.b >= 0) else 0):
@@ -68,11 +70,12 @@ class Map:
 
     def scanCallback(self, msg):
         self.scan = np.array([[msg.ranges], [i for i in range( int( round((msg.angle_max-msg.angle_min)/msg.angle_increment) ) + 1)]])
+        self.scan = self.scan[np.isinf(self.scan[0])]
         print "Received scan"
 
     def poseCallback(self, msg):
         self.pose = msg.pose
-        self.pose2d = np.array([pose.pose.position.x, pose.pose.position.y, 2*np.arcsin(pose.pose.orientation.z)])
+        self.pose2d = np.array([msg.pose.position.x, msg.pose.position.y, 2*np.arcsin(msg.pose.orientation.z)])
         print "Received pose"
 
 
