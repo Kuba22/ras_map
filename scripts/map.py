@@ -78,18 +78,17 @@ class Map:
         bearings = [i*np.pi/180 for i in range( int( round((msg.angle_max-msg.angle_min)/msg.angle_increment) ) + 1)]
         self.scan = np.array([ranges, bearings])
         self.scan = self.scan[:, np.isfinite(ranges)]
-        print "Received scan"
 
     def poseCallback(self, msg):
         self.pose = msg.pose
-        self.pose2d = np.array([msg.pose.position.x, msg.pose.position.y, 2*np.arcsin(msg.pose.orientation.z)])
-        print "Received pose"
+        self.pose2d = np.array([msg.pose.position.x, msg.pose.position.y, 2*np.arctan2(msg.pose.orientation.z, msg.pose.orientation.w)])
 
 
 if __name__ == '__main__':
     m = Map()
 
     rate = rospy.Rate(10)
+
     try:
         while True:
             m.update()
