@@ -6,6 +6,16 @@ import numpy as np
 from sensor_msgs.msg import LaserScan
 from geometry_msgs.msg import PoseStamped, Pose
 
+def drawMap(im, pose_cell):
+    im = im.astype(np.uint8)
+    cv2.line(im,
+(pose_cell[0] + 5, pose_cell[1] - 5),
+(pose_cell[0] - 5, pose_cell[1] + 5), 255, 1)
+    cv2.line(im,
+(pose_cell[0] + 5, pose_cell[1] + 5),
+(pose_cell[0] - 5, pose_cell[1] - 5), 255, 1)
+    cv2.imshow('image', cv2.resize(im, None, fx=2, fy=2))
+    cv2.waitKey(1)
 
 class Map:
     def __init__(self):
@@ -36,7 +46,7 @@ class Map:
         self.h = int(np.ceil(max_y / self.cell_size))    
         if self.map is None:
             lines_img = (lines / self.cell_size).astype(int)
-            self.map = np.zeros((self.w, self.h))
+            self.map = np.zeros((self.h, self.w))
             for ln in lines_img:
                 cv2.line(self.map, (ln[0], ln[1]), (ln[2], ln[3]), 255, 1)
             cv2.imwrite(self.map_file, self.map)
@@ -46,32 +56,43 @@ class Map:
     def update(self):
         if self.scan is None or self.pose2d is None:
             return
+
+        pose_cell = np.array([int(self.pose2d[0]/self.cell_size), int(self.pose2d[1]/self.cell_size)])
+        if pose_cell[0] < 0 or pose_cell[1] < 0 or pose_cell[0] > self.w or pose_cell[1] > self.h:
+            return
+
         pxy = np.array([self.scan[0] * np.cos(self.scan[1] + self.pose2d[2]),
                         self.scan[0] * np.sin(self.scan[1] + self.pose2d[2])]) + self.pose2d[:2, np.newaxis]
         p = (pxy / self.cell_size).astype(int)
-        p = p[:, np.logical_and(np.logical_and(p[0]>0, p[1]>0), np.logical_and(p[0]<self.w, p[1]<self.h))] # this might not be correct
-        pose_cell = (int(self.pose2d[0]/self.cell_size), int(self.pose2d[1]/self.cell_size))
+        p[0, p[0, :]<0]=0
+        p[0, p[0, :]>=self.w]=self.w-1
+        p[1, p[1, :]<0]=0
+        p[1, p[1, :]>=self.h]=self.h-1
+
         im = cv2.imread(self.map_file, 0)
         im = im.astype(int)
         im[p[1], p[0]] += 10
-        (h, w) = self.map.shape
-        im[((pose_cell[1] - self.b) if (pose_cell[1] - self.b >= 0) else 0):
-((pose_cell[1] + self.b + 1) if (pose_cell[1] + self.b < w) else w),
-((pose_cell[0] - self.b) if (pose_cell[0] - self.b >= 0) else 0):
-((pose_cell[0] + self.b + 1) if (pose_cell[0] + self.b < h) else h)] -= 1
+
+        for i in range(p.shape[1]):
+            angle = np.arctan2(p[1, i]-pose_cell[1], p[0, i]-pose_cell[0])
+            r = int(np.sqrt((p[0,i]-pose_cell[0])*(p[0,i]-pose_cell[0]) + (p[1,i]-pose_cell[1])*(p[1,i]-pose_cell[1])))
+            c = np.cos(angle)
+            s = np.sin(angle)
+            x = (pose_cell[0] + np.arange(1, r-1, 1)*c).astype(int)
+            y = (pose_cell[1] + np.arange(1, r-1, 1)*s).astype(int)
+            im[ y, x ] -= 4
+
         im[im > 255] = 255
         im[im < 0] = 0
+        im[0, :] = 255
+        im[-1, :] = 255
+        im[:, 0] = 255
+        im[:, -1] = 255
+
         self.map = im.astype(np.uint8)
-        im = im.astype(np.uint8)
-        cv2.line(im,
-(pose_cell[0] + 5, pose_cell[1] - 5),
-(pose_cell[0] - 5, pose_cell[1] + 5), 255, 1)
-        cv2.line(im,
-(pose_cell[0] + 5, pose_cell[1] + 5),
-(pose_cell[0] - 5, pose_cell[1] - 5), 255, 1)
         cv2.imwrite(self.map_file, self.map)
-        cv2.imshow('image', cv2.resize(im, None, fx=2, fy=2))
-        cv2.waitKey(1)
+        drawMap(im, pose_cell)
+        
 
     def scanCallback(self, msg):
         ranges = list(msg.ranges)
