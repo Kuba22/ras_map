@@ -32,7 +32,7 @@ def boundp(p, h, w):
     p[1, p[1, :]>=h]=h-1
     return p
 
-def prepIm(im, p, pose_cell):
+def prepIm(im, p, pose_cell, b):
     im[p[1], p[0]] += increment_rate
     for i in range(p.shape[1]):
         angle = np.arctan2(p[1, i]-pose_cell[1], p[0, i]-pose_cell[0])
@@ -42,6 +42,10 @@ def prepIm(im, p, pose_cell):
         x = (pose_cell[0] + np.arange(1, r-1, 1)*c).astype(int)
         y = (pose_cell[1] + np.arange(1, r-1, 1)*s).astype(int)
         im[ y, x ] -= decrement_rate
+    battery_half_size = 2
+    if b is not None:
+        for bt in b:
+            im[ -battery_half_size+bt[1]:battery_half_size+bt[1], -battery_half_size+bt[0]:battery_half_size+bt[0] ] = 255
     im[im > 255] = 255
     im[im < 0] = 0
     im[0, :] = 255
@@ -52,7 +56,7 @@ def prepIm(im, p, pose_cell):
 
 class Map:
     def __init__(self):
-        rospy.init_node("map", disable_signals=True)
+        rospy.init_node("map")
         self.pose = None
         self.scan = None
         self.pose2d = None
@@ -67,6 +71,8 @@ class Map:
         self.map_file = self.path_map + "/map_image/lab_maze_2017.png"
         self.map_file_th = self.path_map + "/map_image/map.png"
         self.maze_file = path_maze + "/maps/lab_maze_2017.txt"
+        #self.battery_file = rospack.get_path('detection')+"/mapFiles/battery.txt"
+        self.battery_file = rospack.get_path('ras_map')+"/battery.txt"
 		
         # self.map = cv2.imread(self.map_file, 0)
         self.cell_size = 0.02
@@ -107,20 +113,23 @@ class Map:
         p = (pxy / self.cell_size).astype(int)
         im = cv2.imread(self.map_file, 0).astype(int)
 
+        b = self.readBattery()
+
         err = self.getErr(self.map_cells, p)
         if err < 4:
             p = boundp(p, self.h, self.w)
-            im = prepIm(im, p, pose_cell).astype(int)
+            im = prepIm(im, p, pose_cell, b).astype(int)
             self.map = im
             cv2.imwrite(self.map_file, self.map)
             th = np.zeros((self.h, self.w)).astype(np.uint8)
             th[im>threshold] = 255
             cv2.imwrite(self.map_file_th, cv2.flip(th, 0))
-        
-        try:
-			self.img_pub.publish(self.bridge.cv2_to_imgmsg(th, "8UC1"))
-        except CvBridgeError as e:
-			print(e)
+            try:
+    			self.img_pub.publish(self.bridge.cv2_to_imgmsg(th, "8UC1"))
+            except CvBridgeError as e:
+    			print(e)
+
+        drawMap(im, pose_cell, 'map')
 
     def getErr(self, map_cells, scan_cells):
         p = scan_cells.T.astype(np.float32)
@@ -128,6 +137,13 @@ class Map:
         nn = NearestNeighbors(n_neighbors=1).fit(m)
         d, i = nn.kneighbors(p)
         return np.mean(d)
+
+    def readBattery(self):
+        try:
+            file = open(self.battery_file)
+            return (np.array([map(float, line.split(' ')) for line in file])/self.cell_size).astype(int)
+        except IOError:
+            return None
     
     def scanCallback(self, msg):
         ranges = list(msg.ranges)
@@ -145,7 +161,7 @@ if __name__ == '__main__':
 
     rate = rospy.Rate(3)
 
-    while True:
+    while not rospy.is_shutdown():
 		try:
 				m.update()
 				rate.sleep()
