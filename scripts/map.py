@@ -6,6 +6,9 @@ import numpy as np
 from sensor_msgs.msg import LaserScan
 from geometry_msgs.msg import PoseStamped, Pose
 from sklearn.neighbors import NearestNeighbors
+import os
+from sensor_msgs.msg import Image
+from cv_bridge import CvBridge, CvBridgeError
 
 increment_rate = 12
 decrement_rate = 3
@@ -49,21 +52,23 @@ def prepIm(im, p, pose_cell):
 
 class Map:
     def __init__(self):
-        rospy.init_node("map")
+        rospy.init_node("map", disable_signals=True)
         self.pose = None
         self.scan = None
         self.pose2d = None
         self.scan_sub = rospy.Subscriber("/scan", LaserScan, self.scanCallback)
+        self.img_pub = rospy.Publisher("/map", Image, queue_size=2)
         self.pose_sub = rospy.Subscriber("/localization/pose", PoseStamped, self.poseCallback)
-
+        self.bridge = CvBridge()
+		
         rospack = rospkg.RosPack()
         path_maze = rospack.get_path('ras_maze_map')
-        path_map = rospack.get_path('ras_map')
-        self.map_file = path_map + "/map_image/lab_maze_2017.png"
-        self.map_file_th = path_map + "/map_image/map.png"
+        self.path_map = rospack.get_path('ras_map')
+        self.map_file = self.path_map + "/map_image/lab_maze_2017.png"
+        self.map_file_th = self.path_map + "/map_image/map.png"
         self.maze_file = path_maze + "/maps/lab_maze_2017.txt"
-
-        self.map = cv2.imread(self.map_file, 0)
+		
+        # self.map = cv2.imread(self.map_file, 0)
         self.cell_size = 0.02
         self.b = int(0.5 / self.cell_size)
 
@@ -75,19 +80,19 @@ class Map:
         # min_y = min(min(lines[:,1]), min(lines[:, 3])) # min y
         self.w = int(np.ceil(max_x / self.cell_size))
         self.h = int(np.ceil(max_y / self.cell_size))
+        
         lines_img = (lines / self.cell_size).astype(int)
         mp = np.zeros((self.h, self.w))
         for ln in lines_img:
             cv2.line(mp, (ln[0], ln[1]), (ln[2], ln[3]), 120, 1)
         self.map_cells = np.where(mp==120)
         self.map_cells = np.array([self.map_cells[0], self.map_cells[1]])
-        if self.map is None:
-            self.map = mp
+        # if self.map is None:
+        #     self.map = mp
+        self.map = mp
         cv2.imwrite(self.map_file, self.map)
-        cv2.imwrite(self.map_file_th, self.map)
-
-        cv2.imshow('image', self.map)
-        cv2.waitKey(1)
+        cv2.imwrite(self.map_file_th, cv2.flip(self.map, 0))
+        cv2.imwrite(self.path_map+"/map_image/init_map.png", cv2.flip(self.map, 0))
 
     def update(self):
         if self.scan is None or self.pose2d is None:
@@ -105,15 +110,17 @@ class Map:
         err = self.getErr(self.map_cells, p)
         if err < 4:
             p = boundp(p, self.h, self.w)
-            im = prepIm(im, p, pose_cell).astype(np.uint8)
+            im = prepIm(im, p, pose_cell).astype(int)
             self.map = im
             cv2.imwrite(self.map_file, self.map)
-            th = np.zeros((self.h, self.w))
+            th = np.zeros((self.h, self.w)).astype(np.uint8)
             th[im>threshold] = 255
-            cv2.imwrite(self.map_file_th, th)
-            drawMap(th, pose_cell, 'thresholded')
-
-        drawMap(im, pose_cell, 'image')
+            cv2.imwrite(self.map_file_th, cv2.flip(th, 0))
+        
+        try:
+			self.img_pub.publish(self.bridge.cv2_to_imgmsg(th, "8UC1"))
+        except CvBridgeError as e:
+			print(e)
 
     def getErr(self, map_cells, scan_cells):
         p = scan_cells.T.astype(np.float32)
@@ -136,12 +143,17 @@ class Map:
 if __name__ == '__main__':
     m = Map()
 
-    rate = rospy.Rate(10)
+    rate = rospy.Rate(3)
 
-    try:
-        while True:
-            m.update()
-            rate.sleep()
-    except rospy.ROSInterruptException:
-        cv2.destroyAllWindows()
-        pass
+    while True:
+		try:
+				m.update()
+				rate.sleep()
+		except rospy.ROSInterruptException:
+			cv2.destroyAllWindows()
+			pass
+		except KeyboardInterrupt:
+			cv2.destroyAllWindows()
+			#os.remove(m.map_file)
+			#os.remove(m.map_file_th)
+			break

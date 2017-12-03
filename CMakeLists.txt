@@ -3,7 +3,7 @@ project(ras_map)
 
 add_compile_options(-std=c++11)
 
-find_package(catkin REQUIRED COMPONENTS rospy sensor_msgs geometry_msgs)
+find_package(catkin REQUIRED COMPONENTS rospy sensor_msgs geometry_msgs cv_bridge image_transport)
 
 catkin_package(
   CATKIN_DEPENDS rospy sensor_msgs geometry_msgs
