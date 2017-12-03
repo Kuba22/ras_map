@@ -13,15 +13,17 @@ from cv_bridge import CvBridge, CvBridgeError
 increment_rate = 12
 decrement_rate = 3
 threshold = 100
+measurements_to_ignore = [0.2, 0.233, 2.58, 2.7]
 
 def drawMap(im, pose_cell, name):
     im = im.astype(np.uint8)
+    l = 3
     cv2.line(im,
-(pose_cell[0] + 5, pose_cell[1] - 5),
-(pose_cell[0] - 5, pose_cell[1] + 5), 255, 1)
+(pose_cell[0] + l, pose_cell[1] - l),
+(pose_cell[0] - l, pose_cell[1] + l), 255, 1)
     cv2.line(im,
-(pose_cell[0] + 5, pose_cell[1] + 5),
-(pose_cell[0] - 5, pose_cell[1] - 5), 255, 1)
+(pose_cell[0] + l, pose_cell[1] + l),
+(pose_cell[0] - l, pose_cell[1] - l), 255, 1)
     cv2.imshow(name, cv2.resize(im, None, fx=3, fy=3))
     cv2.waitKey(1)
 
@@ -71,8 +73,7 @@ class Map:
         self.map_file = self.path_map + "/map_image/lab_maze_2017.png"
         self.map_file_th = self.path_map + "/map_image/map.png"
         self.maze_file = path_maze + "/maps/lab_maze_2017.txt"
-        #self.battery_file = rospack.get_path('detection')+"/mapFiles/battery.txt"
-        self.battery_file = rospack.get_path('ras_map')+"/battery.txt"
+        self.battery_file = rospack.get_path('detection')+"/mapFiles/battery.txt"
 		
         # self.map = cv2.imread(self.map_file, 0)
         self.cell_size = 0.02
@@ -103,7 +104,6 @@ class Map:
     def update(self):
         if self.scan is None or self.pose2d is None:
             return
-
         pose_cell = np.array([int(self.pose2d[0]/self.cell_size), int(self.pose2d[1]/self.cell_size)])
         if pose_cell[0] < 0 or pose_cell[1] < 0 or pose_cell[0] > self.w or pose_cell[1] > self.h:
             return
@@ -129,7 +129,7 @@ class Map:
             except CvBridgeError as e:
     			print(e)
 
-        drawMap(im, pose_cell, 'map')
+        #drawMap(im, pose_cell, 'map')
 
     def getErr(self, map_cells, scan_cells):
         p = scan_cells.T.astype(np.float32)
@@ -150,6 +150,10 @@ class Map:
         bearings = [i*np.pi/180 for i in range( int( round((msg.angle_max-msg.angle_min)/msg.angle_increment) ) + 1)]
         self.scan = np.array([ranges, bearings])
         self.scan = self.scan[:, np.isfinite(ranges)]
+        self.scan = self.scan[:,
+np.logical_or(
+np.logical_or(self.scan[0]<measurements_to_ignore[0], self.scan[0]>measurements_to_ignore[1]), 
+np.logical_or(self.scan[1]<measurements_to_ignore[2], self.scan[1]>measurements_to_ignore[3]))]
 
     def poseCallback(self, msg):
         self.pose = msg.pose
